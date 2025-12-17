@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Birthday Wishes Collection</title>
+  <style>
+    :root {
+      --bg: #0f1220;
+      --card: #171a2b;
+      --muted: #9aa0b4;
+      --text: #eef0ff;
+      --accent: #7c8cff;
+      --accent-2: #5cffc6;
+      --danger: #ff6b6b;
+      --radius: 14px;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #1b1f3a, transparent 60%), var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 24px; display: grid; gap: 12px;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+    }
+    .brand h1 { margin: 0; font-size: 1.4rem; letter-spacing: .3px; }
+    .brand p { margin: 0; color: var(--muted); font-size: .9rem; }
+    .controls { display: flex; gap: 8px; }
+    button, select, input, textarea {
+      background: #101327; color: var(--text); border: 1px solid #232656; border-radius: 10px;
+      padding: 10px 12px; outline: none;
+    }
+    button { cursor: pointer; }
+    button.primary { background: linear-gradient(135deg, var(--accent), #9aa7ff); border: none; }
+    button.ghost { background: transparent; }
+    main { padding: 0 24px 24px; display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01)), var(--card);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .panel h2 { margin: 0 0 8px; font-size: 1.05rem; }
+    .panel p { margin: 0 0 12px; color: var(--muted); font-size: .9rem; }
+    .field { display: grid; gap: 6px; margin-bottom: 10px; }
+    textarea { resize: vertical; min-height: 90px; }
+    .counter { text-align: right; color: var(--muted); font-size: .8rem; }
+    .list { display: grid; gap: 12px; }
+    .wish {
+      padding: 14px; border-radius: 12px; background: #0f1230; border: 1px solid #242868;
+      display: grid; gap: 10px; animation: pop .25s ease-out;
+    }
+    @keyframes pop { from { transform: scale(.98); opacity: .6; } to { transform: scale(1); opacity: 1; } }
+    .wish header { padding: 0; grid-template-columns: 1fr auto; }
+    .wish .name { font-weight: 600; }
+    .wish .time { color: var(--muted); font-size: .8rem; }
+    .wish .text { line-height: 1.5; }
+    .wish .actions { display: flex; gap: 8px; align-items: center; }
+    .chip { padding: 6px 8px; border-radius: 999px; background: #121544; border: 1px solid #2a2f7a; font-size: .8rem; }
+    .like { display: inline-flex; gap: 6px; align-items: center; }
+    .like button { padding: 6px 8px; }
+    .moderation { display: none; gap: 8px; }
+    .wish.pending .moderation { display: flex; }
+    .wish.pending { border-color: #3a3f9a; }
+    .filters { display: flex; gap: 8px; margin-bottom: 10px; }
+    .empty { text-align: center; color: var(--muted); padding: 24px; }
+    footer { padding: 12px 24px; color: var(--muted); font-size: .8rem; }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>Birthday Wishes</h1>
+      <p>Collect messages. Keep the moment.</p>
+    </div>
+    <div class="controls">
+      <select id="theme">
+        <option value="default">Default</option>
+        <option value="mint">Mint</option>
+        <option value="sunset">Sunset</option>
+      </select>
+      <button id="export" class="ghost">Export</button>
+      <button id="clear" class="ghost">Clear</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Leave a wish</h2>
+      <p>Short or deep—your words matter.</p>
+      <div class="field">
+        <input id="name" placeholder="Your name" maxlength="32" />
+      </div>
+      <div class="field">
+        <textarea id="message" placeholder="Write your wish…" maxlength="240"></textarea>
+        <div class="counter"><span id="count">0</span>/240</div>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="anon" /> Post anonymously</label>
+      </div>
+      <button id="submit" class="primary">Submit</button>
+      <p class="hint">New wishes are queued for approval.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Wishes</h2>
+      <div class="filters">
+        <select id="filter">
+          <option value="approved">Approved</option>
+          <option value="pending">Pending</option>
+          <option value="all">All</option>
+        </select>
+        <select id="sort">
+          <option value="new">Newest</option>
+          <option value="likes">Most liked</option>
+        </select>
+      </div>
+      <div id="list" class="list"></div>
+      <div id="empty" class="empty" hidden>No wishes yet.</div>
+    </section>
+  </main>
+
+  <footer>Client-side only • Stored locally in your browser</footer>
+
+  <script>
+const $ = (s) => document.querySelector(s);
+
+const state = {
+  wishes: [],
+  filter: 'approved',
+  sort: 'new',
+  replies: {} // store replies per wish
+};
+
+// Helper to show relative time
+function timeAgo(ts) {
+  const date = new Date(ts);
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+// Load all wishes
+async function loadWishes() {
+  const res = await fetch(`wishes.php?status=${state.filter}`);
+  state.wishes = await res.json();
+
+  if (state.sort === 'likes') {
+    state.wishes.sort((a, b) => b.likes - a.likes);
+  }
+
+  render();
+}
+
+// Load replies for a specific wish
+async function loadReplies(wishId) {
+  const res = await fetch(`replies.php?wish_id=${wishId}`);
+  state.replies[wishId] = await res.json();
+  render(); // re-render to show replies
+}
+
+// Submit a new wish
+async function submitWish() {
+  const name = $('#name').value.trim() || 'Guest';
+  const message = $('#message').value.trim();
+  const anonymous = $('#anon').checked ? 1 : 0;
+
+  if (!message) { alert('Message is required'); return; }
+
+  await fetch('wishes.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, message, anonymous })
+  });
+
+  $('#message').value = '';
+  $('#count').textContent = '0';
+  loadWishes();
+}
+
+// Like a wish
+async function likeWish(id) {
+  await fetch('wishes.php', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `id=${id}`
+  });
+  loadWishes();
+}
+
+// Approve a wish (admin only)
+async function approveWish(id) {
+  await fetch('wishes.php', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `id=${id}`
+  });
+  loadWishes();
+}
+
+// Submit a reply to a wish
+async function submitReply(wishId, input) {
+  const message = input.value.trim();
+  if (!message) return;
+
+  await fetch('replies.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wish_id: wishId, name: 'Guest', message })
+  });
+
+  input.value = '';
+  loadReplies(wishId);
+}
+
+// Render all wishes and replies
+function render() {
+  const list = $('#list');
+  list.innerHTML = '';
+
+  if (state.wishes.length === 0) {
+    $('#empty').hidden = false;
+    return;
+  }
+  $('#empty').hidden = true;
+
+  for (const w of state.wishes) {
+    const el = document.createElement('div');
+    el.className = `wish ${w.status}`;
+
+    el.innerHTML = `
+      <header>
+        <div>
+          <div class="name">${w.anonymous == 1 ? 'Anonymous' : w.name}</div>
+          <div class="time">${timeAgo(w.created_at)}</div>
+        </div>
+        <div class="chip">${w.status}</div>
+      </header>
+      <div class="text"></div>
+      <div class="actions">
+        <div class="like">
+          <button data-like>♥</button>
+          <span>${w.likes}</span>
+        </div>
+        ${w.status === 'pending' ? `<div class="moderation">
+          <button data-approve class="ghost">Approve</button>
+        </div>` : ''}
+      </div>
+      <div class="replies-container">
+        <div class="reply-list"></div>
+        <input type="text" class="reply-input" placeholder="Write a reply..." />
+        <button class="reply-submit">Reply</button>
+      </div>
+    `;
+
+    el.querySelector('.text').textContent = w.message;
+    el.querySelector('[data-like]').onclick = () => likeWish(w.id);
+
+    const approveBtn = el.querySelector('[data-approve]');
+    if (approveBtn) approveBtn.onclick = () => approveWish(w.id);
+
+    // Replies
+    const replyList = el.querySelector('.reply-list');
+    const replyInput = el.querySelector('.reply-input');
+    const replySubmit = el.querySelector('.reply-submit');
+
+    replySubmit.onclick = () => submitReply(w.id, replyInput);
+
+    // Load replies for this wish if not loaded
+    if (!state.replies[w.id]) loadReplies(w.id);
+    if (state.replies[w.id]) {
+      replyList.innerHTML = '';
+      for (const r of state.replies[w.id]) {
+        const rEl = document.createElement('div');
+        rEl.className = 'reply';
+        rEl.textContent = `${r.name}: ${r.message} (${timeAgo(r.created_at)})`;
+        replyList.appendChild(rEl);
+      }
+    }
+
+    list.appendChild(el);
+  }
+}
+
+// Event listeners
+$('#submit').onclick = submitWish;
+$('#filter').onchange = (e) => { state.filter = e.target.value; loadWishes(); };
+$('#sort').onchange = (e) => { state.sort = e.target.value; loadWishes(); };
+$('#message').addEventListener('input', (e) => { $('#count').textContent = e.target.value.length; });
+
+// Initial load
+loadWishes();
+
+</script>
+</body>
+</html>
